@@ -1,0 +1,85 @@
+{
+  "name": "Gestión automática de solicitudes de clientes",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Solicitud de presupuesto",
+        "formDescription": "Completa este formulario con los datos de tu solicitud. Nos pondremos en contacto contigo lo antes posible.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Nombre completo",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Correo electrónico",
+              "fieldType": "email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Servicio Solicitado",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Diseño web"
+                  },
+                  {
+                    "option": "Automatización"
+                  },
+                  {
+                    "option": "Chatbot"
+                  },
+                  {
+                    "option": "Otro"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Presupuesto Estimado (€)",
+              "fieldType": "number",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Fecha Deseada",
+              "fieldType": "date",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Descripción de la solicitud",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c2e97f30-30a0-4e95-90ac-c3650fe4ea78",
+      "name": "On form submission",
+      "webhookId": "befcbe24-7d64-4ec2-8bcb-80023688c3dc"
+    }
+  ],
+  "pinData": {},
+  "connections": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "09425b94-1621-4c19-929f-7668f7a2137b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "37bcaab16b2e95864803a0c8ebf843e3e8c84b4197768059e507235a897c4895"
+  },
+  "nodeGroups": [],
+  "id": "KNRBLBwxCNRTcCek",
+  "tags": []
+}
