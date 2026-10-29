@@ -1,0 +1,13 @@
+{
+  "name": "n8n-gestion-solicitudes-clientes",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Automatización con n8n: solicitudes de clientes, prioridad por presupuesto, citas, recordatorios y agenda diaria",
+  "scripts": {
+    "test": "node tests/logica.test.js",
+    "build": "node scripts/generar-workflows.js"
+  },
+  "devDependencies": {
+    "luxon": "^3.5.0"
+  }
+}

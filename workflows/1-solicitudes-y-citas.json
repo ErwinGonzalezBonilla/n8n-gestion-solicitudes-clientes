@@ -1,0 +1,568 @@
+{
+  "name": "1 · Solicitudes de clientes y citas",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 1 · Solicitudes de clientes y citas\nEl cliente rellena el formulario → la IA resume la solicitud → se registra en Google Sheets.\n\n**Presupuesto ≥ 300 €** → prioridad alta: se le asigna la primera hora libre, se crea el evento en Google Calendar y recibe la confirmación de su cita.\n\n**Menos de 300 €** → queda *pendiente de agendar* y el negocio recibe el aviso para darle cita.",
+        "width": 620,
+        "height": 260,
+        "color": 5
+      },
+      "id": "c186dd55-daac-438a-a016-875e9a7dd35e",
+      "name": "Nota 182d",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -380
+      ]
+    },
+    {
+      "parameters": {
+        "formTitle": "Solicitud de presupuesto y cita",
+        "formDescription": "Cuéntanos qué necesitas y elige cuándo te viene bien. Te confirmamos por correo.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Nombre completo",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Correo electrónico",
+              "fieldType": "email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Teléfono"
+            },
+            {
+              "fieldLabel": "Servicio solicitado",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Diseño web"
+                  },
+                  {
+                    "option": "Automatización"
+                  },
+                  {
+                    "option": "Chatbot"
+                  },
+                  {
+                    "option": "Otro"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Presupuesto estimado (€)",
+              "fieldType": "number",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Fecha deseada",
+              "fieldType": "date",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Hora preferida",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "09:00"
+                  },
+                  {
+                    "option": "10:00"
+                  },
+                  {
+                    "option": "11:00"
+                  },
+                  {
+                    "option": "12:00"
+                  },
+                  {
+                    "option": "13:00"
+                  },
+                  {
+                    "option": "14:00"
+                  },
+                  {
+                    "option": "15:00"
+                  },
+                  {
+                    "option": "16:00"
+                  },
+                  {
+                    "option": "17:00"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Descripción de la solicitud",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "responseMode": "onReceived",
+        "options": {
+          "respondWithOptions": {
+            "values": {
+              "formSubmittedText": "¡Gracias! Hemos recibido tu solicitud. Revisa tu correo en unos minutos."
+            }
+          }
+        }
+      },
+      "id": "c03e17a6-9251-4f75-b036-db45ec3cb10c",
+      "name": "Formulario de solicitud",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "0038e741-0ec1-4127-a9a6-9a3d2711c37b"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Limpia los datos del formulario y calcula la prioridad de la solicitud\nconst ZONA = 'Europe/Madrid';\nconst PRESUPUESTO_PRIORITARIO = 300;\n\nreturn $input.all().map((item) => {\n  const f = item.json;\n  const ahora = DateTime.now().setZone(ZONA);\n  const presupuesto = Number(String(f['Presupuesto estimado (€)'] ?? '').replace(',', '.')) || 0;\n  const sufijo = Math.random().toString(36).slice(2, 5).toUpperCase();\n\n  return {\n    json: {\n      ID: `SOL-${ahora.toFormat('yyMMdd-HHmm')}-${sufijo}`,\n      Fecha_registro: ahora.toFormat('yyyy-MM-dd HH:mm'),\n      Nombre: String(f['Nombre completo'] ?? '').trim(),\n      Email: String(f['Correo electrónico'] ?? '').trim().toLowerCase(),\n      Telefono: String(f['Teléfono'] ?? '').trim(),\n      Servicio: f['Servicio solicitado'] ?? 'Otro',\n      Presupuesto: presupuesto,\n      Fecha_deseada: String(f['Fecha deseada'] ?? '').slice(0, 10),\n      Hora_deseada: f['Hora preferida'] ?? '10:00',\n      Descripcion: String(f['Descripción de la solicitud'] ?? '').trim(),\n      Prioridad: presupuesto >= PRESUPUESTO_PRIORITARIO ? 'Alta' : 'Normal',\n      Estado: presupuesto >= PRESUPUESTO_PRIORITARIO ? 'Cita confirmada' : 'Pendiente de agendar',\n    },\n  };\n});\n"
+      },
+      "id": "308f1a7e-6d44-42b8-b943-09a58351127e",
+      "name": "Normalizar y calcular prioridad",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'gpt-4o-mini',\n  temperature: 0.3,\n  response_format: { type: 'json_object' },\n  messages: [\n    { role: 'system', content: 'Eres el asistente de un negocio de servicios digitales. Analiza la solicitud de un cliente y responde SOLO con JSON con estas claves: resumen (una frase), categoria (web, automatizacion, chatbot u otro), complejidad (baja, media o alta), respuesta_cliente (2 frases cercanas en español sobre su proyecto, sin saludo inicial porque el correo ya empieza con «Hola + nombre», y sin prometer precios ni plazos).' },\n    { role: 'user', content: JSON.stringify({ nombre: $json.Nombre, servicio: $json.Servicio, presupuesto_eur: $json.Presupuesto, descripcion: $json.Descripcion }) }\n  ]\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "f441d74f-0c8a-4396-b869-9e31dc12af42",
+      "name": "IA: analizar solicitud",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Une la solicitud con el análisis de la IA (si la IA falla, el flujo sigue igual)\nconst solicitud = $('Normalizar y calcular prioridad').item.json;\nlet ia = {};\ntry {\n  ia = JSON.parse($json.choices[0].message.content);\n} catch (error) {\n  ia = {};\n}\n\nreturn {\n  json: {\n    ...solicitud,\n    Resumen_IA: ia.resumen || 'Sin resumen (IA no disponible)',\n    Categoria_IA: ia.categoria || solicitud.Servicio,\n    Complejidad_IA: ia.complejidad || 'sin evaluar',\n    Respuesta_IA: ia.respuesta_cliente || 'Gracias por contarnos tu proyecto. Ya lo estamos revisando.',\n  },\n};\n"
+      },
+      "id": "da2f1ede-3c63-48ca-a5d5-8e52c4f6cc49",
+      "name": "Combinar análisis IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PEGA_AQUI_EL_ID_DE_TU_GOOGLE_SHEET",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Solicitudes",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "28d12116-7bac-4293-bd2e-81d4b5a1eee0",
+      "name": "Registrar solicitud",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "ef620c68-58c1-4bfb-819b-7826a4125cef",
+              "leftValue": "={{ $('Combinar análisis IA').item.json.Presupuesto }}",
+              "rightValue": 300,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2c0c8954-e3f6-4e88-bbcc-7278c1d89c7e",
+      "name": "¿Presupuesto ≥ 300 €?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "PEGA_AQUI_EL_ID_DE_TU_GOOGLE_SHEET",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Citas",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "30fad56f-3ee3-45b4-90bd-357129fd0d9c",
+      "name": "Leer agenda",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1340,
+        -140
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Busca la primera hora libre en la agenda a partir de la fecha y hora que pidió el cliente\nconst ZONA = 'Europe/Madrid';\nconst APERTURA = 9;          // primera cita del día\nconst CIERRE = 18;           // la última cita debe terminar antes de esta hora\nconst DURACION_MIN = 60;     // duración de cada cita\nconst DIAS_LABORABLES = [1, 2, 3, 4, 5]; // lunes a viernes\nconst ANTELACION_HORAS = 2;  // nunca dar una cita con menos antelación que esto\n\nconst s = $('Combinar análisis IA').first().json;\nconst ocupadas = new Set(\n  $input.all()\n    .map((i) => i.json)\n    .filter((c) => c.ID_cita && c.Estado !== 'Cancelada')\n    .map((c) => `${c.Fecha} ${String(c.Hora).slice(0, 5)}`)\n);\n\nconst ahora = DateTime.now().setZone(ZONA);\nconst minimo = ahora.plus({ hours: ANTELACION_HORAS });\nconst apertura = (dia) => dia.set({ hour: APERTURA, minute: 0, second: 0, millisecond: 0 });\nconst cabe = (h) => h.plus({ minutes: DURACION_MIN }) <= h.set({ hour: CIERRE, minute: 0 });\nconst clave = (h) => `${h.toFormat('yyyy-MM-dd')} ${h.toFormat('HH:mm')}`;\nconst esLibre = (h) =>\n  DIAS_LABORABLES.includes(h.weekday) && h.hour >= APERTURA && cabe(h) && h >= minimo && !ocupadas.has(clave(h));\nconst siguiente = (h) => {\n  const n = h.plus({ minutes: DURACION_MIN });\n  return cabe(n) ? n : apertura(n.plus({ days: 1 }));\n};\n\nconst pedida = DateTime.fromISO(`${s.Fecha_deseada}T${s.Hora_deseada}`, { zone: ZONA });\nlet hueco = pedida.isValid ? pedida.set({ second: 0, millisecond: 0 }) : apertura(ahora.plus({ days: 1 }));\nif (hueco < minimo) hueco = minimo.plus({ hours: 1 }).startOf('hour');\nif (hueco.hour < APERTURA) hueco = apertura(hueco);\n\nlet intentos = 0;\nwhile (!esLibre(hueco)) {\n  hueco = siguiente(hueco);\n  if (++intentos > 2000) throw new Error('No hay huecos libres en la agenda en los próximos meses');\n}\n\nconst fin = hueco.plus({ minutes: DURACION_MIN });\nreturn [{\n  json: {\n    ID_cita: `CITA-${hueco.toFormat('yyMMdd-HHmm')}`,\n    ID_solicitud: s.ID,\n    Nombre: s.Nombre,\n    Email: s.Email,\n    Telefono: s.Telefono,\n    Servicio: s.Servicio,\n    Presupuesto: s.Presupuesto,\n    Fecha: hueco.toFormat('yyyy-MM-dd'),\n    Hora: hueco.toFormat('HH:mm'),\n    Fecha_texto: hueco.setLocale('es').toFormat(\"cccc d 'de' LLLL\"),\n    Inicio: hueco.toISO(),\n    Fin: fin.toISO(),\n    Hora_cambiada: pedida.isValid && +pedida === +hueco ? 'No' : 'Sí',\n    Estado: 'Confirmada',\n    Recordatorio_24h: 'No',\n    Recordatorio_dia: 'No',\n    Seguimiento: 'No',\n  },\n}];\n"
+      },
+      "id": "ee864740-475e-4d53-989a-908d1bd78cfd",
+      "name": "Asignar hueco en la agenda",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PEGA_AQUI_EL_ID_DE_TU_GOOGLE_SHEET",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Citas",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "86292974-9dfd-4ecc-a114-bd9ab6e4e8c4",
+      "name": "Guardar cita",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1780,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "TU_CORREO@gmail.com",
+          "mode": "id"
+        },
+        "start": "={{ $('Asignar hueco en la agenda').item.json.Inicio }}",
+        "end": "={{ $('Asignar hueco en la agenda').item.json.Fin }}",
+        "additionalFields": {
+          "summary": "=⭐ {{ $('Asignar hueco en la agenda').item.json.Servicio }} · {{ $('Asignar hueco en la agenda').item.json.Nombre }}",
+          "description": "=Cita prioritaria ({{ $('Combinar análisis IA').item.json.Presupuesto }} €)\nCliente: {{ $('Asignar hueco en la agenda').item.json.Nombre }} · {{ $('Asignar hueco en la agenda').item.json.Email }} · {{ $('Asignar hueco en la agenda').item.json.Telefono }}\n\nResumen IA: {{ $('Combinar análisis IA').item.json.Resumen_IA }}\n\nDescripción: {{ $('Combinar análisis IA').item.json.Descripcion }}\n\nID: {{ $('Asignar hueco en la agenda').item.json.ID_cita }}"
+        }
+      },
+      "id": "4930d8a8-470a-4f7f-b6d6-107dfe2dbc83",
+      "name": "Crear evento en Google Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        2000,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Asignar hueco en la agenda').item.json.Email }}",
+        "subject": "=✅ Cita confirmada: {{ $('Asignar hueco en la agenda').item.json.Fecha_texto }} a las {{ $('Asignar hueco en la agenda').item.json.Hora }}",
+        "emailType": "html",
+        "message": "=<div style=\"font-family:Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden\">\n  <div style=\"background:#1B2A3A;color:#fff;padding:18px 22px;font-size:18px;font-weight:bold\">Tu cita está confirmada</div>\n  <div style=\"padding:22px;color:#1B2836;font-size:15px;line-height:1.55\"><p>Hola {{ $('Asignar hueco en la agenda').item.json.Nombre.split(' ')[0] }},</p>\n<p>{{ $('Combinar análisis IA').item.json.Respuesta_IA }}</p>\n<p style=\"background:#F2F5F9;border-radius:8px;padding:12px 16px\">📅 <b>{{ $('Asignar hueco en la agenda').item.json.Fecha_texto }}</b><br>🕒 <b>{{ $('Asignar hueco en la agenda').item.json.Hora }} h</b><br>🛠️ {{ $('Asignar hueco en la agenda').item.json.Servicio }}</p>\n{{ $('Asignar hueco en la agenda').item.json.Hora_cambiada === 'Sí' ? '<p>La hora que pediste ya estaba ocupada, así que te hemos reservado la primera disponible. Si no te viene bien, responde a este correo.</p>' : '' }}\n<p>Te enviaremos un recordatorio el día antes y otro el mismo día de la cita.</p></div>\n</div>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "9fa44d26-7067-4abc-b04b-e25f7aa95067",
+      "name": "Confirmar cita al cliente",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2220,
+        -140
+      ],
+      "webhookId": "283fe7d7-3710-431a-b107-6b3a84ef66d1"
+    },
+    {
+      "parameters": {
+        "sendTo": "TU_CORREO@gmail.com",
+        "subject": "=⭐ Solicitud PRIORITARIA · {{ $('Combinar análisis IA').item.json.Presupuesto }} € · cita {{ $('Asignar hueco en la agenda').item.json.Fecha }} {{ $('Asignar hueco en la agenda').item.json.Hora }}",
+        "emailType": "html",
+        "message": "=<div style=\"font-family:Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden\">\n  <div style=\"background:#1B2A3A;color:#fff;padding:18px 22px;font-size:18px;font-weight:bold\">Nueva solicitud prioritaria</div>\n  <div style=\"padding:22px;color:#1B2836;font-size:15px;line-height:1.55\"><p><b>{{ $('Combinar análisis IA').item.json.Nombre }}</b> · {{ $('Combinar análisis IA').item.json.Email }} · {{ $('Combinar análisis IA').item.json.Telefono }}</p>\n<p>🛠️ {{ $('Combinar análisis IA').item.json.Servicio }} · 💶 <b>{{ $('Combinar análisis IA').item.json.Presupuesto }} €</b> · Complejidad IA: {{ $('Combinar análisis IA').item.json.Complejidad_IA }}</p>\n<p>🤖 <i>{{ $('Combinar análisis IA').item.json.Resumen_IA }}</i></p>\n<p>📅 Cita asignada: <b>{{ $('Asignar hueco en la agenda').item.json.Fecha_texto }} a las {{ $('Asignar hueco en la agenda').item.json.Hora }}</b> (ya está en Google Calendar)</p>\n<p style=\"color:#5B6676\">{{ $('Combinar análisis IA').item.json.Descripcion }}</p></div>\n</div>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "0a15757e-b202-40ea-8134-0471ba7bfb2a",
+      "name": "Avisar al negocio: prioritaria",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2440,
+        -140
+      ],
+      "webhookId": "0123ba2c-9c6d-4869-99fb-ea92c78483e0"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Combinar análisis IA').item.json.Email }}",
+        "subject": "=📩 Hemos recibido tu solicitud",
+        "emailType": "html",
+        "message": "=<div style=\"font-family:Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden\">\n  <div style=\"background:#1B2A3A;color:#fff;padding:18px 22px;font-size:18px;font-weight:bold\">Solicitud recibida</div>\n  <div style=\"padding:22px;color:#1B2836;font-size:15px;line-height:1.55\"><p>Hola {{ $('Combinar análisis IA').item.json.Nombre.split(' ')[0] }},</p>\n<p>{{ $('Combinar análisis IA').item.json.Respuesta_IA }}</p>\n<p>En menos de 48 horas te escribimos para confirmar el día y la hora de tu cita. Pediste: <b>{{ $('Combinar análisis IA').item.json.Fecha_deseada }} a las {{ $('Combinar análisis IA').item.json.Hora_deseada }}</b>.</p></div>\n</div>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b16f56f4-337c-4efa-999f-794db089e4de",
+      "name": "Confirmar recepción al cliente",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1340,
+        140
+      ],
+      "webhookId": "490bbd87-5e02-462e-bf07-5c7d58ea856e"
+    },
+    {
+      "parameters": {
+        "sendTo": "TU_CORREO@gmail.com",
+        "subject": "=📋 Nueva solicitud · {{ $('Combinar análisis IA').item.json.Presupuesto }} € · pendiente de agendar",
+        "emailType": "html",
+        "message": "=<div style=\"font-family:Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden\">\n  <div style=\"background:#1B2A3A;color:#fff;padding:18px 22px;font-size:18px;font-weight:bold\">Solicitud pendiente de agendar</div>\n  <div style=\"padding:22px;color:#1B2836;font-size:15px;line-height:1.55\"><p><b>{{ $('Combinar análisis IA').item.json.Nombre }}</b> · {{ $('Combinar análisis IA').item.json.Email }} · {{ $('Combinar análisis IA').item.json.Telefono }}</p>\n<p>🛠️ {{ $('Combinar análisis IA').item.json.Servicio }} · 💶 {{ $('Combinar análisis IA').item.json.Presupuesto }} € · pide {{ $('Combinar análisis IA').item.json.Fecha_deseada }} a las {{ $('Combinar análisis IA').item.json.Hora_deseada }}</p>\n<p>🤖 <i>{{ $('Combinar análisis IA').item.json.Resumen_IA }}</i></p>\n<p>Para darle cita, añade una fila en la pestaña <b>Citas</b> con Estado <b>Confirmada</b>. Los recordatorios se enviarán solos.</p></div>\n</div>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "abbef913-f137-4b24-893d-5e5eabe2a850",
+      "name": "Avisar al negocio: pendiente de agendar",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1560,
+        140
+      ],
+      "webhookId": "fa784943-1fe6-4b14-bb0a-ac17dc2c8a27"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Formulario de solicitud": {
+      "main": [
+        [
+          {
+            "node": "Normalizar y calcular prioridad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar y calcular prioridad": {
+      "main": [
+        [
+          {
+            "node": "IA: analizar solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IA: analizar solicitud": {
+      "main": [
+        [
+          {
+            "node": "Combinar análisis IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combinar análisis IA": {
+      "main": [
+        [
+          {
+            "node": "Registrar solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar solicitud": {
+      "main": [
+        [
+          {
+            "node": "¿Presupuesto ≥ 300 €?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Presupuesto ≥ 300 €?": {
+      "main": [
+        [
+          {
+            "node": "Leer agenda",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Confirmar recepción al cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer agenda": {
+      "main": [
+        [
+          {
+            "node": "Asignar hueco en la agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asignar hueco en la agenda": {
+      "main": [
+        [
+          {
+            "node": "Guardar cita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar cita": {
+      "main": [
+        [
+          {
+            "node": "Crear evento en Google Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear evento en Google Calendar": {
+      "main": [
+        [
+          {
+            "node": "Confirmar cita al cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmar cita al cliente": {
+      "main": [
+        [
+          {
+            "node": "Avisar al negocio: prioritaria",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmar recepción al cliente": {
+      "main": [
+        [
+          {
+            "node": "Avisar al negocio: pendiente de agendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Madrid"
+  },
+  "tags": []
+}

@@ -1,0 +1,321 @@
+{
+  "name": "2 · Recordatorios de citas y agenda diaria",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 2 · Recordatorios y agenda diaria\nCada hora revisa la pestaña **Citas** y envía, solo una vez por cita:\n- ⏰ recordatorio **el día antes**\n- 📍 recordatorio **el mismo día**\n- 💬 mensaje de **seguimiento** al día siguiente\n\nDe lunes a sábado a las 7:30 envía al negocio la **agenda del día**.",
+        "width": 560,
+        "height": 280,
+        "color": 5
+      },
+      "id": "8ca96f37-99fa-49c3-83a6-7970f21b9196",
+      "name": "Nota 9296",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "8baa2c35-d58c-47b6-a312-fd760991b9f9",
+      "name": "Cada hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "PEGA_AQUI_EL_ID_DE_TU_GOOGLE_SHEET",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Citas",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "35b0400c-7502-435d-bb56-6e1c3b505330",
+      "name": "Leer citas",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decide qué correos tocan ahora: recordatorio 24 h antes, recordatorio el mismo día y seguimiento al día siguiente\nconst ZONA = 'Europe/Madrid';\n// Acepta fechas escritas como 2026-11-05 o 05/11/2026 (por si añades citas a mano en la hoja)\nconst leerFecha = (texto) => {\n  const t = String(texto ?? '').trim();\n  let d = DateTime.fromISO(t.slice(0, 10), { zone: ZONA });\n  if (!d.isValid) d = DateTime.fromFormat(t, 'd/M/yyyy', { zone: ZONA });\n  return d.isValid ? d.startOf('day') : null;\n};\nconst leerInicio = (cita) => {\n  const dia = leerFecha(cita.Fecha);\n  const [h, m] = String(cita.Hora ?? '').split(':').map(Number);\n  return dia && Number.isFinite(h) ? dia.set({ hour: h, minute: m || 0 }) : null;\n};\nconst NEGOCIO = 'Tu negocio';\nconst HORA_MINIMA_ENVIO = 8;  // no enviar correos de madrugada\nconst DIAS_SEGUIMIENTO = 3;   // no pedir opinión de citas muy antiguas\n\nconst ahora = DateTime.now().setZone(ZONA);\nconst hoy = ahora.startOf('day');\nif (ahora.hour < HORA_MINIMA_ENVIO) return [];\n\nconst plantilla = (titulo, cuerpo) => `\n<div style=\"font-family:Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden\">\n  <div style=\"background:#1B2A3A;color:#fff;padding:18px 22px;font-size:18px;font-weight:bold\">${titulo}</div>\n  <div style=\"padding:22px;color:#1B2836;font-size:15px;line-height:1.55\">${cuerpo}\n    <p style=\"margin-top:22px;color:#5B6676\">Un saludo,<br>${NEGOCIO}</p>\n  </div>\n</div>`;\nconst detalle = (c, inicio) =>\n  `<p style=\"background:#F2F5F9;border-radius:8px;padding:12px 16px\">📅 <b>${inicio.setLocale('es').toFormat(\"cccc d 'de' LLLL\")}</b><br>🕒 <b>${inicio.toFormat('HH:mm')} h</b><br>🛠️ ${c.Servicio}</p>`;\n\nconst envios = [];\nfor (const { json: c } of $input.all()) {\n  if (!c.ID_cita || c.Estado !== 'Confirmada' || !c.Email) continue;\n  const inicio = leerInicio(c);\n  if (!inicio) continue;\n  const dias = Math.round(inicio.startOf('day').diff(hoy, 'days').days);\n  const nombre = String(c.Nombre || '').split(' ')[0] || 'Hola';\n\n  if (dias === 1 && c.Recordatorio_24h !== 'Sí') {\n    envios.push({ ID_cita: c.ID_cita, Campo: 'Recordatorio_24h', Email: c.Email,\n      Asunto: `⏰ Mañana tienes cita a las ${inicio.toFormat('HH:mm')}`,\n      Html: plantilla('Tu cita es mañana', `<p>Hola ${nombre}, te recordamos que <b>mañana</b> tenemos una cita:</p>${detalle(c, inicio)}<p>Si no puedes asistir, responde a este correo y buscamos otra hora.</p>`) });\n  } else if (dias === 0 && c.Recordatorio_dia !== 'Sí' && inicio > ahora) {\n    envios.push({ ID_cita: c.ID_cita, Campo: 'Recordatorio_dia', Email: c.Email,\n      Asunto: `📍 Hoy es tu cita: ${inicio.toFormat('HH:mm')} h`,\n      Html: plantilla('Hoy es el día', `<p>Hola ${nombre}, te esperamos <b>hoy</b>:</p>${detalle(c, inicio)}<p>¡Hasta luego!</p>`) });\n  } else if (dias < 0 && dias >= -DIAS_SEGUIMIENTO && c.Seguimiento !== 'Sí') {\n    envios.push({ ID_cita: c.ID_cita, Campo: 'Seguimiento', Email: c.Email,\n      Asunto: '¿Qué tal fue? Tu opinión nos ayuda',\n      Html: plantilla('Gracias por confiar en nosotros', `<p>Hola ${nombre}, gracias por la cita de ${c.Servicio}.</p><p>¿Nos cuentas en una línea qué tal fue? Solo tienes que responder a este correo. Y si quieres seguir con el proyecto, dinos y te preparamos los siguientes pasos.</p>`) });\n  }\n}\nreturn envios.map((json) => ({ json }));\n"
+      },
+      "id": "23767454-d075-461f-bbc4-aaca9ee64eb2",
+      "name": "Detectar avisos pendientes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Email }}",
+        "subject": "={{ $json.Asunto }}",
+        "emailType": "html",
+        "message": "={{ $json.Html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "92eae22d-015a-4917-a0e2-f7d44dfe10c4",
+      "name": "Enviar aviso al cliente",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        660,
+        0
+      ],
+      "webhookId": "e3f147f1-113e-455a-894d-6b7ba98b6783"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Marca en la hoja que este correo ya se envió, para no repetirlo en la siguiente ejecución\nconst envio = $('Detectar avisos pendientes').item.json;\nreturn { json: { ID_cita: envio.ID_cita, [envio.Campo]: 'Sí' } };\n"
+      },
+      "id": "af03bb5a-1581-4ba5-bdc1-7511040b9b8c",
+      "name": "Preparar marca de enviado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PEGA_AQUI_EL_ID_DE_TU_GOOGLE_SHEET",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Citas",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "ID_cita"
+          ],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "721a172b-cba0-41b4-9d43-b38ce46b42ca",
+      "name": "Marcar aviso como enviado",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 7 * * 1-6"
+            }
+          ]
+        }
+      },
+      "id": "65a5cbf8-bd98-4408-9ab0-d9c1a720b2b1",
+      "name": "Cada mañana 7:30",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "PEGA_AQUI_EL_ID_DE_TU_GOOGLE_SHEET",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Citas",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "021b9228-e175-4790-b649-cdfe4601c00c",
+      "name": "Leer citas del día",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        220,
+        260
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepara el resumen con las citas de hoy para el negocio\nconst ZONA = 'Europe/Madrid';\n// Acepta fechas escritas como 2026-11-05 o 05/11/2026 (por si añades citas a mano en la hoja)\nconst leerFecha = (texto) => {\n  const t = String(texto ?? '').trim();\n  let d = DateTime.fromISO(t.slice(0, 10), { zone: ZONA });\n  if (!d.isValid) d = DateTime.fromFormat(t, 'd/M/yyyy', { zone: ZONA });\n  return d.isValid ? d.startOf('day') : null;\n};\nconst leerInicio = (cita) => {\n  const dia = leerFecha(cita.Fecha);\n  const [h, m] = String(cita.Hora ?? '').split(':').map(Number);\n  return dia && Number.isFinite(h) ? dia.set({ hour: h, minute: m || 0 }) : null;\n};\nconst hoy = DateTime.now().setZone(ZONA).startOf('day');\nconst citas = $input.all()\n  .map((i) => i.json)\n  .filter((c) => c.ID_cita && c.Estado === 'Confirmada')\n  .map((c) => ({ ...c, inicio: leerInicio(c) }))\n  .filter((c) => c.inicio && c.inicio.hasSame(hoy, 'day'))\n  .sort((a, b) => a.inicio - b.inicio);\n\nconst filas = citas.map((c) =>\n  `<tr><td style=\"padding:8px 12px;border-bottom:1px solid #eee\"><b>${c.inicio.toFormat('HH:mm')}</b></td><td style=\"padding:8px 12px;border-bottom:1px solid #eee\">${c.Nombre}<br><small>${c.Telefono || ''} · ${c.Email}</small></td><td style=\"padding:8px 12px;border-bottom:1px solid #eee\">${c.Servicio}<br><small>${c.Presupuesto} €</small></td></tr>`\n).join('');\n\nreturn [{\n  json: {\n    Asunto: citas.length ? `📋 Agenda de hoy: ${citas.length} cita(s)` : '📋 Hoy no hay citas',\n    Html: citas.length\n      ? `<div style=\"font-family:Arial,sans-serif\"><p>Citas de hoy, ${hoy.setLocale('es').toFormat(\"cccc d 'de' LLLL\")}:</p><table style=\"border-collapse:collapse;font-size:14px\">${filas}</table></div>`\n      : '<p style=\"font-family:Arial,sans-serif\">Hoy no hay citas en la agenda. Buen momento para revisar las solicitudes pendientes de agendar.</p>',\n  },\n}];\n"
+      },
+      "id": "4134ae48-fc49-457d-afe7-99e0858769a1",
+      "name": "Preparar agenda del día",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "TU_CORREO@gmail.com",
+        "subject": "={{ $json.Asunto }}",
+        "emailType": "html",
+        "message": "={{ $json.Html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "c7b9d58d-100e-4a4d-9071-7bfc1b045ab8",
+      "name": "Enviar agenda al negocio",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        660,
+        260
+      ],
+      "webhookId": "700a5b7a-7400-4d44-9281-07e3d32c3d94"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Cada hora": {
+      "main": [
+        [
+          {
+            "node": "Leer citas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer citas": {
+      "main": [
+        [
+          {
+            "node": "Detectar avisos pendientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detectar avisos pendientes": {
+      "main": [
+        [
+          {
+            "node": "Enviar aviso al cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar aviso al cliente": {
+      "main": [
+        [
+          {
+            "node": "Preparar marca de enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar marca de enviado": {
+      "main": [
+        [
+          {
+            "node": "Marcar aviso como enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cada mañana 7:30": {
+      "main": [
+        [
+          {
+            "node": "Leer citas del día",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer citas del día": {
+      "main": [
+        [
+          {
+            "node": "Preparar agenda del día",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar agenda del día": {
+      "main": [
+        [
+          {
+            "node": "Enviar agenda al negocio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Madrid"
+  },
+  "tags": []
+}

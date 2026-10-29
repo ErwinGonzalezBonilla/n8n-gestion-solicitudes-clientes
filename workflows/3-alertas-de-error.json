@@ -1,0 +1,72 @@
+{
+  "name": "3 · Alertas de error",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 3 · Alertas de error\nSi falla cualquier paso de los workflows 1 o 2, avisa por correo con el nodo y el error para revisarlo.\n\nEn los workflows 1 y 2: **Settings → Error workflow → 3 · Alertas de error**.",
+        "width": 480,
+        "height": 220,
+        "color": 3
+      },
+      "id": "020da00b-3dd0-438f-acf5-41bde01d3d5c",
+      "name": "Nota f499",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "0947e43b-d20f-40b8-86b0-215c3cd3b1f9",
+      "name": "Si falla un workflow",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "TU_CORREO@gmail.com",
+        "subject": "=⚠️ Error en «{{ $json.workflow.name }}»",
+        "emailType": "html",
+        "message": "=<div style=\"font-family:Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden\">\n  <div style=\"background:#1B2A3A;color:#fff;padding:18px 22px;font-size:18px;font-weight:bold\">Algo ha fallado en una automatización</div>\n  <div style=\"padding:22px;color:#1B2836;font-size:15px;line-height:1.55\"><p>Workflow: <b>{{ $json.workflow.name }}</b></p>\n<p>Paso que falló: <b>{{ $json.execution.lastNodeExecuted }}</b></p>\n<p>Error: <code>{{ $json.execution.error.message }}</code></p>\n<p><a href=\"{{ $json.execution.url }}\">Ver la ejecución en n8n</a></p></div>\n</div>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "4c45f540-74b3-4c2a-b055-16dc106e874c",
+      "name": "Avisar del error",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        220,
+        0
+      ],
+      "webhookId": "23173c5d-546f-46d4-8a5f-447e3d3f1c67"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Si falla un workflow": {
+      "main": [
+        [
+          {
+            "node": "Avisar del error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Madrid"
+  },
+  "tags": []
+}
